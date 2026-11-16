@@ -213,7 +213,7 @@ def create_acc_hud_control(packer, bus, acc_status, set_speed, lead_visible, dis
     "ACC_Status_ACC":                acc_status,
     "ACC_Tempolimit":                0,
     "ACC_Wunschgeschw_02":           set_speed if set_speed < 250 else 327.36,
-    "ACC_Gesetzte_Zeitluecke":       distance_bars, # 5 distance bars available (3 are used by OP)
+    "ACC_Gesetzte_Zeitluecke":       distance_bars, # 5 distance bars, one per following gap step
     "ACC_Display_Prio":              0 if fcw_alert and acc_status in (ACC_HUD_ACTIVE, ACC_HUD_OVERRIDE) else 1, # probably keeping warning in front
     "ACC_Optischer_Fahrerhinweis":   1 if fcw_alert and acc_status in (ACC_HUD_ACTIVE, ACC_HUD_OVERRIDE) else 0, # enables optical warning
     "ACC_Akustischer_Fahrerhinweis": 3 if fcw_alert and acc_status in (ACC_HUD_ACTIVE, ACC_HUD_OVERRIDE) else 0, # enables sound warning
