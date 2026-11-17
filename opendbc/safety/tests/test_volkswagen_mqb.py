@@ -4,6 +4,7 @@ import numpy as np
 from opendbc.car.structs import CarParams
 import opendbc.safety.tests.common as common
 from opendbc.car.volkswagen.values import VolkswagenSafetyFlags
+from opendbc.sunnypilot.car.volkswagen.values_ext import VolkswagenSafetyFlagsSP
 
 MAX_ACCEL = 2.0
 MIN_ACCEL = -3.5
@@ -158,6 +159,20 @@ class TestVolkswagenMqbLongSafety(TestVolkswagenMqbSafetyBase):
     self._rx(self._tsk_status_msg(False, main_switch=False))
     self.assertFalse(self.safety.get_controls_allowed(), "controls allowed after ACC main switch off")
 
+  def test_accel_override_with_gas(self):
+    # engaged with the driver on the gas: 0.0 (hold speed) is allowed on both accel messages, nothing else
+    self.safety.set_controls_allowed(True)
+    self.safety.set_gas_pressed_prev(True)
+    for msg in (self._acc_06_msg, self._acc_07_msg):
+      self.assertTrue(self._tx(msg(0)))
+      self.assertTrue(self._tx(msg(self.INACTIVE_ACCEL)))
+      self.assertFalse(self._tx(msg(MAX_ACCEL)))
+      self.assertFalse(self._tx(msg(MIN_ACCEL)))
+    # not engaged: 0.0 is still blocked
+    self.safety.set_controls_allowed(False)
+    for msg in (self._acc_06_msg, self._acc_07_msg):
+      self.assertFalse(self._tx(msg(0)))
+
   def test_accel_safety_check(self):
     for controls_allowed in [True, False]:
       # enforce we don't skip over 0 or inactive accel
@@ -172,5 +187,97 @@ class TestVolkswagenMqbLongSafety(TestVolkswagenMqbSafetyBase):
         self.assertEqual(send, self._tx(self._acc_07_msg(accel)), (controls_allowed, accel))
         # ensure the optional secondary accel field remains inactive for now
         self.assertEqual(is_inactive_accel, self._tx(self._acc_07_msg(accel, secondary_accel=accel)), (controls_allowed, accel))
+
+
+class TestVolkswagenMqbLongBrakeStopResumeSafety(TestVolkswagenMqbLongSafety):
+  """Resume after a braked stop: releasing a brake that was held to a full stop re-allows controls."""
+
+  def setUp(self):
+    super().setUp()
+    self.safety.set_current_safety_param_sp(VolkswagenSafetyFlagsSP.BRAKE_STOP_RESUME)
+
+  def _brake(self, pressed, speed):
+    self._rx(self._speed_msg(speed))
+    self._rx(self._motor_14_msg(pressed))
+    self._rx(self._esp_05_msg(pressed))
+
+  def _engaged_brake_to_stop(self):
+    self._rx(self._tsk_status_msg(False, main_switch=True))
+    self.safety.set_controls_allowed(True)
+    self._brake(False, 20)
+    self._brake(True, 20)
+    self.assertFalse(self.safety.get_controls_allowed(), "brake must still cancel controls")
+    self._brake(True, 5)
+    self._brake(True, 0)
+
+  def test_release_at_full_stop_resumes(self):
+    self._engaged_brake_to_stop()
+    self.assertFalse(self.safety.get_controls_allowed(), "no controls while the brake is held")
+    self._brake(False, 0)
+    self.assertTrue(self.safety.get_controls_allowed())
+
+  def test_release_before_stop_does_not_resume(self):
+    # braking to coast: let off before the car stops
+    self._rx(self._tsk_status_msg(False, main_switch=True))
+    self.safety.set_controls_allowed(True)
+    self._brake(True, 20)
+    self._brake(True, 10)
+    self._brake(False, 10)
+    self._brake(False, 0)
+    self.assertFalse(self.safety.get_controls_allowed())
+    # a later brake press at the stop must not re-arm it either
+    self._brake(True, 0)
+    self._brake(False, 0)
+    self.assertFalse(self.safety.get_controls_allowed())
+
+  def test_release_while_rolling_after_stop_does_not_resume(self):
+    self._engaged_brake_to_stop()
+    self._brake(True, 2)  # eased off and crept forward
+    self._brake(False, 2)
+    self.assertFalse(self.safety.get_controls_allowed())
+    self._brake(False, 0)
+    self.assertFalse(self.safety.get_controls_allowed())
+
+  def test_not_engaged_does_not_resume(self):
+    self.safety.set_controls_allowed(False)
+    self._brake(True, 20)
+    self._brake(True, 0)
+    self._brake(False, 0)
+    self.assertFalse(self.safety.get_controls_allowed())
+
+  def test_gas_cancel_and_main_switch_disarm(self):
+    for disarm in ("gas", "cancel", "main"):
+      self._rx(self._tsk_status_msg(False, main_switch=True))
+      self._rx(self._user_gas_msg(0))
+      self._engaged_brake_to_stop()
+      if disarm == "gas":
+        self._rx(self._user_gas_msg(10))
+        self._rx(self._user_gas_msg(0))
+      elif disarm == "cancel":
+        self._rx(self._gra_acc_01_msg(cancel=True, bus=0))
+        self._rx(self._gra_acc_01_msg(bus=0))
+      else:
+        self._rx(self._tsk_status_msg(False, main_switch=False))
+        self._rx(self._tsk_status_msg(False, main_switch=True))
+      self._brake(False, 0)
+      self.assertFalse(self.safety.get_controls_allowed(), disarm)
+
+  def test_flag_off_does_not_resume(self):
+    self.safety.set_current_safety_param_sp(0)
+    self._engaged_brake_to_stop()
+    self._brake(False, 0)
+    self.assertFalse(self.safety.get_controls_allowed())
+
+  def test_brake_again_at_stop_resumes_again(self):
+    self._engaged_brake_to_stop()
+    self._brake(False, 0)
+    self.assertTrue(self.safety.get_controls_allowed())
+    # a fresh brake press at the stop cancels again, and re-arms (still stopped), so release resumes again
+    self._brake(True, 0)
+    self.assertFalse(self.safety.get_controls_allowed())
+    self._brake(False, 0)
+    self.assertTrue(self.safety.get_controls_allowed())
+
+
 if __name__ == "__main__":
   unittest.main()

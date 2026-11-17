@@ -45,6 +45,40 @@ static safety_config volkswagen_mqb_init(uint16_t param) {
                                    BUILD_SAFETY_CFG(volkswagen_mqb_rx_checks, VOLKSWAGEN_MQB_STOCK_TX_MSGS);
 }
 
+// sunnypilot: resume after a braked stop. A brake press always cancels controls (generic_rx_checks). If that brake
+// is then held until the car is fully stopped, releasing it while still stopped re-allows controls, as if Resume had
+// been pressed. Letting off before the stop (braking to coast), releasing while rolling, the gas, Cancel or main
+// switch off all drop it. openpilot keeps the car held after this until the driver or the lead car moves.
+static void volkswagen_brake_stop_resume_update(void) {
+  if (!volkswagen_longitudinal || !GET_FLAG(current_safety_param_sp, VOLKSWAGEN_PARAM_SP_BRAKE_STOP_RESUME)) {
+    volkswagen_brake_resume_armed = false;
+    volkswagen_brake_resume_stopped = false;
+  } else if (controls_allowed && brake_pressed) {
+    // engaged and braking: generic_rx_checks is about to drop controls
+    volkswagen_brake_resume_armed = true;
+    volkswagen_brake_resume_stopped = !vehicle_moving;
+  } else if (volkswagen_brake_resume_armed) {
+    if (!acc_main_on || gas_pressed) {
+      volkswagen_brake_resume_armed = false;
+    } else if (brake_pressed) {
+      if (!vehicle_moving) {
+        volkswagen_brake_resume_stopped = true;
+      }
+    } else {
+      // brake released: only a release at a full stop, after a full stop, re-allows controls
+      if (volkswagen_brake_resume_stopped && !vehicle_moving) {
+        controls_allowed = true;
+      }
+      volkswagen_brake_resume_armed = false;
+    }
+  } else {
+  }
+
+  if (!volkswagen_brake_resume_armed) {
+    volkswagen_brake_resume_stopped = false;
+  }
+}
+
 static void volkswagen_mqb_rx_hook(const CANPacket_t *msg) {
   // Update in-motion state by sampling wheel speeds
   if (msg_matches(msg, MSG_ESP_19, 0U)) {
@@ -99,6 +133,7 @@ static void volkswagen_mqb_rx_hook(const CANPacket_t *msg) {
     // Signal: GRA_ACC_01.GRA_Abbrechen
     if (GET_BIT(msg, 13U)) {
       controls_allowed = false;
+      volkswagen_brake_resume_armed = false;
     }
   }
 
@@ -118,6 +153,8 @@ static void volkswagen_mqb_rx_hook(const CANPacket_t *msg) {
   }
 
   brake_pressed = volkswagen_brake_pedal_switch || volkswagen_brake_pressure_detected;
+
+  volkswagen_brake_stop_resume_update();
 }
 
 static bool volkswagen_mqb_tx_hook(const CANPacket_t *msg) {
@@ -169,7 +206,12 @@ static bool volkswagen_mqb_tx_hook(const CANPacket_t *msg) {
       desired_accel = (((msg->data[7] << 3) | ((msg->data[6] & 0xE0U) >> 5)) * 5U) - 7220U;
     }
 
-    violation |= longitudinal_accel_checks(desired_accel, VOLKSWAGEN_MQB_LONG_LIMITS);
+    // Inactive accel is 3.01, but while engaged with the driver on the gas we send 0.0 with ACC_OVERRIDE so the
+    // drivetrain holds speed under a light pedal, as stock ACC does. Only exactly 0.0: no braking, no added accel.
+    bool accel_override = controls_allowed && (desired_accel == 0);
+    if (!accel_override) {
+      violation |= longitudinal_accel_checks(desired_accel, VOLKSWAGEN_MQB_LONG_LIMITS);
+    }
 
     if (violation) {
       tx = false;

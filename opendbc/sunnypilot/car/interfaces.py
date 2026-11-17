@@ -28,6 +28,7 @@ from opendbc.sunnypilot.car.rivian.values import RivianFlagsSP
 from opendbc.sunnypilot.car.subaru.values_ext import SubaruFlagsSP, SubaruSafetyFlagsSP
 from opendbc.sunnypilot.car.tesla.values import MadsScreenButtonType, TeslaFlagsSP, TeslaSafetyFlagsSP
 from opendbc.sunnypilot.car.toyota.values import ToyotaFlagsSP
+from opendbc.sunnypilot.car.volkswagen.values_ext import VolkswagenFlagsSP, VolkswagenSafetyFlagsSP
 
 
 class LatControlInputs(NamedTuple):
@@ -118,6 +119,7 @@ def setup_interfaces(CI, CP: structs.CarParams, CP_SP: structs.CarParamsSP,
   _initialize_radar_tracks(CP, CP_SP, can_recv, can_send)
   _initialize_stop_and_go(CP, CP_SP, params_dict)
   _initialize_toyota(CP, CP_SP, params_dict)
+  _initialize_volkswagen(CP, CP_SP, params_dict)
 
 
 def _initialize_custom_longitudinal_tuning(CI, CP: structs.CarParams, CP_SP: structs.CarParamsSP,
@@ -198,3 +200,14 @@ def _initialize_toyota(CP: structs.CarParams, CP_SP: structs.CarParamsSP, params
 
     if toyota_tss2_smooth and CP.flags & ToyotaFlags.TSS2 and CP.openpilotLongitudinalControl:
       CP_SP.flags |= ToyotaFlagsSP.TSS2_SMOOTH.value
+
+
+def _initialize_volkswagen(CP: structs.CarParams, CP_SP: structs.CarParamsSP, params_dict: dict[str, str]) -> None:
+  # Resume after a braked stop: MQB with openpilot longitudinal only, the panda rule lives in volkswagen_mqb.h.
+  # Not manuals: they can't engage below minEnableSpeed, so it could only refuse at every stop.
+  is_mqb = not CP.flags & (VolkswagenFlags.PQ | VolkswagenFlags.MLB | VolkswagenFlags.MEB)
+  is_manual = CP.transmissionType == structs.CarParams.TransmissionType.manual
+  if CP.brand == 'volkswagen' and is_mqb and not is_manual and CP.openpilotLongitudinalControl:
+    if int(params_dict.get("BrakeStopResume", 0)) == 1:
+      CP_SP.flags |= VolkswagenFlagsSP.BRAKE_STOP_RESUME.value
+      CP_SP.safetyParam |= VolkswagenSafetyFlagsSP.BRAKE_STOP_RESUME

@@ -5,6 +5,7 @@ from opendbc.car.lateral import apply_driver_steer_torque_limits
 from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.volkswagen import mebcan, mlbcan, mqbcan, pqcan
+from opendbc.sunnypilot.car.follow_gap_buttons import FollowGapButtons
 from opendbc.car.volkswagen.values import CanBus, CarControllerParams, VolkswagenFlags
 
 VisualAlert = structs.CarControl.HUDControl.VisualAlert
@@ -57,6 +58,7 @@ class CarController(CarControllerBase):
     self.accel_last = 0.
     self.lead_distance_bars_last = None
     self.distance_bar_frame = 0
+    self.follow_gap_buttons = FollowGapButtons()  # MQB: same distance page window openpilot uses for the + / - buttons
     self.gra_acc_counter_last = None
     self.hca_mitigation = HCAMitigation(self.CCP)
 
@@ -145,11 +147,14 @@ class CarController(CarControllerBase):
 
         else:
           stopping = actuators.longControlState == LongCtrlState.stopping
-          acc_control = self.CCS.acc_control_value(CS.out.cruiseState.available, CS.out.accFaulted, CC.longActive)
+          # Gas override (MQB): like stock ACC, stay in ACC_OVERRIDE and ask for 0 m/s^2 so the engine holds the
+          # current speed until the pedal asks for more, instead of dropping to standby where a light pedal slows the car
+          gas_override = self.CCS is mqbcan and CC.cruiseControl.override
+          acc_control = self.CCS.acc_control_value(CS.out.cruiseState.available, CS.out.accFaulted, CC.longActive, gas_override)
           accel = float(np.clip(actuators.accel, self.CCP.ACCEL_MIN, self.CCP.ACCEL_MAX) if CC.longActive else 0)
           starting = actuators.longControlState == LongCtrlState.pid and (CS.esp_hold_confirmation or CS.out.vEgo < 0.25)
-          can_sends.extend(self.CCS.create_acc_accel_control(self.packer_pt, self.CAN.pt, CS.acc_type, CC.longActive, accel,
-                                                             acc_control, stopping, starting, CS.esp_hold_confirmation))
+          can_sends.extend(self.CCS.create_acc_accel_control(self.packer_pt, self.CAN.pt, CS.acc_type, CC.longActive or gas_override,
+                                                             accel, acc_control, stopping, starting, CS.esp_hold_confirmation))
 
         self.accel_last = accel
 
@@ -170,6 +175,10 @@ class CarController(CarControllerBase):
 
     if hud_control.leadDistanceBars != self.lead_distance_bars_last:
       self.distance_bar_frame = self.frame
+    if self.CCS is mqbcan and self.CP.openpilotLongitudinalControl:
+      self.follow_gap_buttons.update(CS.out.buttonEvents)
+      if hud_control.leadDistanceBars != self.lead_distance_bars_last and self.lead_distance_bars_last:
+        self.follow_gap_buttons.open_page()  # also changed from the phone settings page (not the first value at startup)
 
     if self.frame % self.CCP.ACC_HUD_STEP == 0 and self.CP.openpilotLongitudinalControl:
       if self.CP.flags & VolkswagenFlags.MEB:
@@ -186,12 +195,15 @@ class CarController(CarControllerBase):
         lead_distance = 0
         if hud_control.leadVisible and self.frame * DT_CTRL > 1.0:  # Don't display lead until we know the scaling factor
           lead_distance = 512 if CS.upscale_lead_car_signal else 8
-        acc_hud_status = self.CCS.acc_hud_status_value(CS.out.cruiseState.available, CS.out.accFaulted, CC.longActive)
+        gas_override = self.CCS is mqbcan and CC.cruiseControl.override
+        acc_hud_status = self.CCS.acc_hud_status_value(CS.out.cruiseState.available, CS.out.accFaulted, CC.longActive,
+                                                       gas_override)
         # FIXME: PQ may need to use the on-the-wire mph/kmh toggle to fix rounding errors
         # FIXME: Detect clusters with vEgoCluster offsets and apply an identical vCruiseCluster offset
         set_speed = hud_control.setSpeed * CV.MS_TO_KPH
         can_sends.append(self.CCS.create_acc_hud_control(self.packer_pt, self.CAN.pt, acc_hud_status, set_speed,
-                                                         lead_distance, hud_control.leadDistanceBars))
+                                                         lead_distance, hud_control.leadDistanceBars,
+                                                         self.follow_gap_buttons.page_open))
 
     # **** Stock ACC Button Controls **************************************** #
 

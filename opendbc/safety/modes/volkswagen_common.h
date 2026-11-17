@@ -19,6 +19,16 @@ extern bool volkswagen_brake_pressure_detected;
 bool volkswagen_brake_pedal_switch = false;
 bool volkswagen_brake_pressure_detected = false;
 
+// sunnypilot: resume after a braked stop (opt-in, MQB openpilot longitudinal only)
+extern const uint16_t VOLKSWAGEN_PARAM_SP_BRAKE_STOP_RESUME;
+const uint16_t VOLKSWAGEN_PARAM_SP_BRAKE_STOP_RESUME = 1;
+
+extern bool volkswagen_brake_resume_armed;
+bool volkswagen_brake_resume_armed = false;  // the brake cancelled an engagement, and is still held
+
+extern bool volkswagen_brake_resume_stopped;
+bool volkswagen_brake_resume_stopped = false;  // the car has come to a full stop while that brake was held
+
 #define MSG_LH_EPS_03        0x09FU   // RX from EPS, for driver steering torque
 #define MSG_ESP_19           0x0B2U   // RX from ABS, for wheel speeds
 #define MSG_ESP_05           0x106U   // RX from ABS, for brake switch state
@@ -44,6 +54,8 @@ static void volkswagen_common_init(void) {
   volkswagen_resume_button_prev = false;
   volkswagen_brake_pedal_switch = false;
   volkswagen_brake_pressure_detected = false;
+  volkswagen_brake_resume_armed = false;
+  volkswagen_brake_resume_stopped = false;
   gen_crc_lookup_table_8(0x2F, volkswagen_crc8_lut_8h2f);
   return;
 }

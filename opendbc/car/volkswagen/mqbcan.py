@@ -70,9 +70,11 @@ def create_acc_buttons_control(packer, bus, gra_stock_values, cancel=False, resu
   return packer.make_can_msg("GRA_ACC_01", bus, values)
 
 
-def acc_control_value(main_switch_on, acc_faulted, long_active):
+def acc_control_value(main_switch_on, acc_faulted, long_active, override=False):
   if acc_faulted:
     acc_control = 6
+  elif override:
+    acc_control = 4  # ACC_OVERRIDE: engaged, driver on the gas, the engine takes the larger of pedal and ACC request
   elif long_active:
     acc_control = 3
   elif main_switch_on:
@@ -83,9 +85,9 @@ def acc_control_value(main_switch_on, acc_faulted, long_active):
   return acc_control
 
 
-def acc_hud_status_value(main_switch_on, acc_faulted, long_active):
-  # TODO: happens to resemble the ACC control value for now, but extend this for init/gas override later
-  return acc_control_value(main_switch_on, acc_faulted, long_active)
+def acc_hud_status_value(main_switch_on, acc_faulted, long_active, override=False):
+  # TODO: happens to resemble the ACC control value for now, but extend this for init later
+  return acc_control_value(main_switch_on, acc_faulted, long_active, override)
 
 
 def create_acc_accel_control(packer, bus, acc_type, acc_enabled, accel, acc_control, stopping, starting, esp_hold):
@@ -128,11 +130,12 @@ def create_acc_accel_control(packer, bus, acc_type, acc_enabled, accel, acc_cont
   return commands
 
 
-def create_acc_hud_control(packer, bus, acc_hud_status, set_speed, lead_distance, distance):
+def create_acc_hud_control(packer, bus, acc_hud_status, set_speed, lead_distance, distance, show_distance=False):
   values = {
     "ACC_Status_Anzeige": acc_hud_status,
     "ACC_Wunschgeschw_02": set_speed if set_speed < 250 else 327.36,
     "ACC_Gesetzte_Zeitluecke": min(max(distance, 1), 5),  # cluster shows 1-5 bars, one per following gap step
+    "ACC_Anzeige_Zeitluecke": show_distance,  # pops up the distance page, as stock does on a distance button press
     "ACC_Display_Prio": 3,
     "ACC_Abstandsindex": lead_distance,
   }

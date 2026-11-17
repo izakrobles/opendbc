@@ -281,6 +281,8 @@ struct CarState {
       setCruise @9;
       resumeCruise @10;
       gapAdjustCruise @11;
+      gapCloserCruise @12;  # sunnypilot: distance button pressed toward a shorter gap
+      gapFartherCruise @13;  # sunnypilot: distance button pressed toward a longer gap
     }
   }
 
