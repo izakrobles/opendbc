@@ -6,6 +6,11 @@ from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.volkswagen import mebcan, mlbcan, mqbcan, pqcan
 from opendbc.sunnypilot.car.follow_gap_buttons import FollowGapButtons
+
+# MQB gas override hold (ACC_OVERRIDE + 0.0 m/s^2 under the driver's pedal). Off until the panda runs firmware built
+# with the matching volkswagen_mqb.h rule: older firmware blocks the 0.0 request while the gas is pressed, which
+# leaves the drivetrain with no ACC_06/ACC_07 for the length of the press.
+MQB_GAS_OVERRIDE_HOLD = False
 from opendbc.car.volkswagen.values import CanBus, CarControllerParams, VolkswagenFlags
 
 VisualAlert = structs.CarControl.HUDControl.VisualAlert
@@ -149,7 +154,7 @@ class CarController(CarControllerBase):
           stopping = actuators.longControlState == LongCtrlState.stopping
           # Gas override (MQB): like stock ACC, stay in ACC_OVERRIDE and ask for 0 m/s^2 so the engine holds the
           # current speed until the pedal asks for more, instead of dropping to standby where a light pedal slows the car
-          gas_override = self.CCS is mqbcan and CC.cruiseControl.override
+          gas_override = MQB_GAS_OVERRIDE_HOLD and self.CCS is mqbcan and CC.cruiseControl.override
           acc_control = self.CCS.acc_control_value(CS.out.cruiseState.available, CS.out.accFaulted, CC.longActive, gas_override)
           accel = float(np.clip(actuators.accel, self.CCP.ACCEL_MIN, self.CCP.ACCEL_MAX) if CC.longActive else 0)
           starting = actuators.longControlState == LongCtrlState.pid and (CS.esp_hold_confirmation or CS.out.vEgo < 0.25)
@@ -195,7 +200,7 @@ class CarController(CarControllerBase):
         lead_distance = 0
         if hud_control.leadVisible and self.frame * DT_CTRL > 1.0:  # Don't display lead until we know the scaling factor
           lead_distance = 512 if CS.upscale_lead_car_signal else 8
-        gas_override = self.CCS is mqbcan and CC.cruiseControl.override
+        gas_override = MQB_GAS_OVERRIDE_HOLD and self.CCS is mqbcan and CC.cruiseControl.override
         acc_hud_status = self.CCS.acc_hud_status_value(CS.out.cruiseState.available, CS.out.accFaulted, CC.longActive,
                                                        gas_override)
         # FIXME: PQ may need to use the on-the-wire mph/kmh toggle to fix rounding errors
