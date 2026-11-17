@@ -7,10 +7,10 @@ from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.volkswagen import mebcan, mlbcan, mqbcan, pqcan
 from opendbc.sunnypilot.car.follow_gap_buttons import FollowGapButtons
 
-# MQB gas override hold (ACC_OVERRIDE + 0.0 m/s^2 under the driver's pedal). Off until the panda runs firmware built
-# with the matching volkswagen_mqb.h rule: older firmware blocks the 0.0 request while the gas is pressed, which
-# leaves the drivetrain with no ACC_06/ACC_07 for the length of the press.
-MQB_GAS_OVERRIDE_HOLD = False
+# MQB gas override hold (ACC_OVERRIDE + 0.0 m/s^2 under the driver's pedal). Needs panda firmware built with the
+# matching volkswagen_mqb.h rule (the device can't build firmware, it's built off-device and copied over): older
+# firmware blocks the 0.0 request while the gas is pressed, leaving the drivetrain with no ACC_06/ACC_07 meanwhile.
+MQB_GAS_OVERRIDE_HOLD = True
 from opendbc.car.volkswagen.values import CanBus, CarControllerParams, VolkswagenFlags
 
 VisualAlert = structs.CarControl.HUDControl.VisualAlert
