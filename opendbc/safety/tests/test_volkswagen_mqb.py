@@ -230,13 +230,32 @@ class TestVolkswagenMqbLongBrakeStopResumeSafety(TestVolkswagenMqbLongSafety):
     self._brake(False, 0)
     self.assertFalse(self.safety.get_controls_allowed())
 
+  def test_release_while_creeping_after_stop_resumes(self):
+    # an automatic starts to creep as the pedal comes up, before the brake switch releases
+    self._engaged_brake_to_stop()
+    self._brake(True, 2)
+    self._brake(False, 4.9)
+    self.assertTrue(self.safety.get_controls_allowed())
+
   def test_release_while_rolling_after_stop_does_not_resume(self):
     self._engaged_brake_to_stop()
-    self._brake(True, 2)  # eased off and crept forward
-    self._brake(False, 2)
+    self._brake(True, 2)
+    self._brake(False, 5.1)  # faster than a creep at release
     self.assertFalse(self.safety.get_controls_allowed())
     self._brake(False, 0)
     self.assertFalse(self.safety.get_controls_allowed())
+
+  def test_rolling_on_past_a_creep_needs_a_fresh_stop(self):
+    self._engaged_brake_to_stop()
+    self._brake(True, 12)  # rolled on with the brake still on
+    self._brake(True, 2)
+    self._brake(False, 2)
+    self.assertFalse(self.safety.get_controls_allowed())
+    self._engaged_brake_to_stop()
+    self._brake(True, 12)
+    self._brake(True, 0)  # a fresh full stop
+    self._brake(False, 1)
+    self.assertTrue(self.safety.get_controls_allowed())
 
   def test_not_engaged_does_not_resume(self):
     self.safety.set_controls_allowed(False)

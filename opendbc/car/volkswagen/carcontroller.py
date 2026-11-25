@@ -64,6 +64,9 @@ class CarController(CarControllerBase):
     self.lead_distance_bars_last = None
     self.distance_bar_frame = 0
     self.follow_gap_buttons = FollowGapButtons()  # MQB: same distance page window openpilot uses for the + / - buttons
+    self.acc_hud_engaged_last = False
+    self.acc_hud_page_until = 0  # MQB: frame the stock-style distance page shown on engage ends
+    self.acc_hud_prio_until = 0  # MQB: frame the raised ACC display priority ends
     self.gra_acc_counter_last = None
     self.hca_mitigation = HCAMitigation(self.CCP)
 
@@ -206,9 +209,21 @@ class CarController(CarControllerBase):
         # FIXME: PQ may need to use the on-the-wire mph/kmh toggle to fix rounding errors
         # FIXME: Detect clusters with vEgoCluster offsets and apply an identical vCruiseCluster offset
         set_speed = hud_control.setSpeed * CV.MS_TO_KPH
+
+        # MQB: follow the stock radar's display sequence. On engage it shows the distance page for 2 s and holds
+        # priority 1 for 3 s; on disengage priority 1 for 2 s; priority stays 1 for 1 s after a distance page closes.
+        # The engage page is display only: it doesn't open the + / - window, those still set the speed.
+        hud_engaged = self.CCS is mqbcan and acc_hud_status in (3, 4)
+        if hud_engaged != self.acc_hud_engaged_last:
+          self.acc_hud_prio_until = self.frame + (300 if hud_engaged else 200)
+          self.acc_hud_page_until = self.frame + 200 if hud_engaged else 0
+        self.acc_hud_engaged_last = hud_engaged
+        if self.follow_gap_buttons.page_open:
+          self.acc_hud_prio_until = max(self.acc_hud_prio_until, self.frame + 100)
+        show_distance = self.follow_gap_buttons.page_open or self.frame < self.acc_hud_page_until
         can_sends.append(self.CCS.create_acc_hud_control(self.packer_pt, self.CAN.pt, acc_hud_status, set_speed,
-                                                         lead_distance, hud_control.leadDistanceBars,
-                                                         self.follow_gap_buttons.page_open))
+                                                         lead_distance, hud_control.leadDistanceBars, show_distance,
+                                                         self.frame < self.acc_hud_prio_until))
 
     # **** Stock ACC Button Controls **************************************** #
 

@@ -92,7 +92,8 @@ def create_acc_accel_control(packer, bus, acc_type, acc_enabled, accel, acc_cont
   return commands
 
 
-def create_acc_hud_control(packer, bus, acc_hud_status, set_speed, lead_distance, distance, show_distance=False):  # show_distance: MQB only
+def create_acc_hud_control(packer, bus, acc_hud_status, set_speed, lead_distance, distance, show_distance=False,
+                           priority_boost=False):  # show_distance, priority_boost: MQB only
   values = {
     "ACA_StaACC": acc_hud_status,
     "ACA_Zeitluecke": min(max(distance, 1), 5),  # cluster shows 1-5 bars, one per following gap step

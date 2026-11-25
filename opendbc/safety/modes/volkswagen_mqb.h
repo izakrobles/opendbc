@@ -46,9 +46,10 @@ static safety_config volkswagen_mqb_init(uint16_t param) {
 }
 
 // sunnypilot: resume after a braked stop. A brake press always cancels controls (generic_rx_checks). If that brake
-// is then held until the car is fully stopped, releasing it while still stopped re-allows controls, as if Resume had
-// been pressed. Letting off before the stop (braking to coast), releasing while rolling, the gas, Cancel or main
-// switch off all drop it. openpilot keeps the car held after this until the driver or the lead car moves.
+// is then held until the car is fully stopped, releasing it there re-allows controls, as if Resume had been pressed.
+// "There" is below creep speed, since an automatic starts rolling as the pedal comes up. Letting off before the stop
+// (braking to coast), rolling faster than a creep, the gas, Cancel or main switch off all drop it. openpilot keeps
+// the car held after this until the driver or the lead car moves.
 static void volkswagen_brake_stop_resume_update(void) {
   if (!volkswagen_longitudinal || !GET_FLAG(current_safety_param_sp, VOLKSWAGEN_PARAM_SP_BRAKE_STOP_RESUME)) {
     volkswagen_brake_resume_armed = false;
@@ -63,10 +64,13 @@ static void volkswagen_brake_stop_resume_update(void) {
     } else if (brake_pressed) {
       if (!vehicle_moving) {
         volkswagen_brake_resume_stopped = true;
+      } else if (!volkswagen_creeping) {
+        volkswagen_brake_resume_stopped = false;  // rolled on past a creep: needs a fresh full stop
+      } else {
       }
     } else {
-      // brake released: only a release at a full stop, after a full stop, re-allows controls
-      if (volkswagen_brake_resume_stopped && !vehicle_moving) {
+      // brake released: only a release at creep speed or less, after a full stop, re-allows controls
+      if (volkswagen_brake_resume_stopped && volkswagen_creeping) {
         controls_allowed = true;
       }
       volkswagen_brake_resume_armed = false;
@@ -90,6 +94,7 @@ static void volkswagen_mqb_rx_hook(const CANPacket_t *msg) {
     }
     // Check all wheel speeds for any movement
     vehicle_moving = speed > 0;
+    volkswagen_creeping = speed < VOLKSWAGEN_BRAKE_RESUME_CREEP_SPEED_SUM;
   }
 
   // Update driver input torque samples

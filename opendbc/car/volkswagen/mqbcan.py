@@ -130,13 +130,17 @@ def create_acc_accel_control(packer, bus, acc_type, acc_enabled, accel, acc_cont
   return commands
 
 
-def create_acc_hud_control(packer, bus, acc_hud_status, set_speed, lead_distance, distance, show_distance=False):
+def create_acc_hud_control(packer, bus, acc_hud_status, set_speed, lead_distance, distance, show_distance=False,
+                           priority_boost=False):
   values = {
     "ACC_Status_Anzeige": acc_hud_status,
     "ACC_Wunschgeschw_02": set_speed if set_speed < 250 else 327.36,
     "ACC_Gesetzte_Zeitluecke": min(max(distance, 1), 5),  # cluster shows 1-5 bars, one per following gap step
-    "ACC_Anzeige_Zeitluecke": show_distance,  # pops up the distance page, as stock does on a distance button press
-    "ACC_Display_Prio": 3,
+    "ACC_Anzeige_Zeitluecke": show_distance,  # request the distance page
+    # 0 highest, 1 medium, 2 low, 3 none. Matches the stock radar (logged on a 2018 Golf Alltrack): 1 with the
+    # distance page and around engage/disengage, 2 while engaged, 3 on standby. At 3 the cluster ignores the page.
+    "ACC_Display_Prio": 1 if (show_distance or priority_boost) else 2 if acc_hud_status in (3, 4) else 3,
+    "ACC_Tachokranz": acc_hud_status in (3, 4),  # speedometer ring lit while engaged, as stock
     "ACC_Abstandsindex": lead_distance,
   }
 

@@ -29,6 +29,14 @@ bool volkswagen_brake_resume_armed = false;  // the brake cancelled an engagemen
 extern bool volkswagen_brake_resume_stopped;
 bool volkswagen_brake_resume_stopped = false;  // the car has come to a full stop while that brake was held
 
+// an automatic starts to creep as the brake is eased off, before the pedal switch releases, so the release itself
+// only has to happen below creep speed: 5 km/h averaged over the four wheels (0.0075 km/h per bit, summed)
+extern const int VOLKSWAGEN_BRAKE_RESUME_CREEP_SPEED_SUM;
+const int VOLKSWAGEN_BRAKE_RESUME_CREEP_SPEED_SUM = 2667;
+
+extern bool volkswagen_creeping;
+bool volkswagen_creeping = false;  // stopped or rolling below creep speed
+
 #define MSG_LH_EPS_03        0x09FU   // RX from EPS, for driver steering torque
 #define MSG_ESP_19           0x0B2U   // RX from ABS, for wheel speeds
 #define MSG_ESP_05           0x106U   // RX from ABS, for brake switch state
@@ -56,6 +64,7 @@ static void volkswagen_common_init(void) {
   volkswagen_brake_pressure_detected = false;
   volkswagen_brake_resume_armed = false;
   volkswagen_brake_resume_stopped = false;
+  volkswagen_creeping = false;
   gen_crc_lookup_table_8(0x2F, volkswagen_crc8_lut_8h2f);
   return;
 }
